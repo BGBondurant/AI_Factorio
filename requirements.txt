@@ -1,0 +1,4 @@
+mcrcon>=0.7.0 # For RCON communication
+# Add other libraries as needed, e.g., for JSON parsing if not using built-in json
+# For Gemini API interaction in the future (placeholder)
+# google-generativeai
