@@ -5,6 +5,7 @@
   "author": "AI Agent (Jules)",
   "contact": "",
   "homepage": "",
-  "description": "Provides an RCON interface for an AI agent to interact with the game.",
-  "factorio_version": "1.1"
+  "description": "Provides an RCON interface for an AI agent to interact with the game, including scanning and recipe lookups.",
+  "factorio_version": "2.0",
+  "dependencies": ["base >= 2.0"]
 }
