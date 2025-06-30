@@ -206,11 +206,21 @@ local function scan_nearby_entities_impl(params)
 
     for _, entity in pairs(entities_found) do
       if entity.valid then -- Make sure entity still exists
-        table.insert(found_entities_data, {
-          name = entity.name,
-          position = {x = string.format("%.2f", entity.position.x), y = string.format("%.2f", entity.position.y)},
-          unit_number = entity.unit_number -- This is the unique ID
-        })
+
+        -- Create a table for the entity's data
+        local entity_data = {
+            name = entity.name,
+            position = {x = string.format("%.2f", entity.position.x), y = string.format("%.2f", entity.position.y)},
+            unit_number = entity.unit_number -- This is the unique ID
+        }
+
+        -- If the entity is a resource and has an amount, add it to the data
+        if entity.type == "resource" and entity.amount then
+            entity_data.amount = entity.amount
+        end
+
+        -- Add the entity's data to the list of found entities
+        table.insert(found_entities_data, entity_data)
       end
     end
   end
@@ -269,6 +279,68 @@ local function get_all_unlocked_recipes_impl()
   return to_json_string({recipes = unlocked_recipes_data})
 end
 
+-- RCON function to command the player to mine a target entity
+local function mine_target_entity_impl(params)
+  local player = game.players[1]
+  if not player then
+    return to_json_string({status = "error", message = "Player not found", entity_id = params and params.unit_number})
+  end
+  if not player.character then
+    return to_json_string({status = "error", message = "Player character not found", entity_id = params and params.unit_number})
+  end
+  if not (params and params.unit_number) then
+    return to_json_string({status = "error", message = "unit_number not provided for mining target"})
+  end
+
+  local target_entity = nil
+  -- Attempt to find entity by ID. player.surface.find_entity_by_id doesn't exist directly.
+  -- We iterate through entities in a small box around player, or rely on player.selected if AI can select.
+  -- For now, let's assume the AI will move close enough that find_entities_filtered on a small area is okay,
+  -- or that the entity ID is from a recent scan.
+  -- A more robust way is to use game.get_entity_by_id(unit_number) if available or surface.get_entity_by_id()
+  -- As of Factorio 1.1+, game.get_entity_by_id() is not directly available in the mod script global scope.
+  -- We must use surface.find_entities_filtered with the unit_number.
+
+  local entities_in_small_area = player.surface.find_entities_filtered{
+    position = player.position,
+    radius = 5, -- Small radius, assuming player is close to the target
+    unit_number = params.unit_number
+  }
+  if #entities_in_small_area > 0 then
+    target_entity = entities_in_small_area[1]
+  end
+
+  if not (target_entity and target_entity.valid) then
+    return to_json_string({status = "error", message = "Target entity not found or invalid", entity_id = params.unit_number})
+  end
+
+  if not (target_entity.mineable and target_entity.type == "resource") then
+    -- Could also check player.character.can_mine(target_entity) which is more comprehensive
+      if not player.character.can_mine(target_entity) then
+        return to_json_string({status = "error", message = "Target entity is not mineable by player character: " .. target_entity.name, entity_id = params.unit_number, entity_name = target_entity.name})
+      end
+      -- If can_mine is true, but it's not a resource (e.g. a rock), proceed.
+      -- For now, let's restrict to type "resource" or "tree" for simplicity, as Gemini will be told to mine these.
+      if not (target_entity.type == "resource" or target_entity.type == "tree") then
+        return to_json_string({status = "error", message = "Target entity is not a resource or tree: " .. target_entity.name .. " (type: " .. target_entity.type .. ")", entity_id = params.unit_number, entity_name = target_entity.name})
+      end
+  end
+
+  -- Check if character has a suitable mining tool (e.g. pickaxe)
+  -- This is implicitly handled by player.character.can_mine usually.
+  -- For simplicity, we assume the player has basic mining capability.
+
+  player.character.mine(target_entity)
+  -- Note: player.character.mine(target_entity, player.force) is not the correct signature.
+  -- It's just player.character.mine(target_entity).
+  -- The game handles mining progress internally. This command initiates/continues mining.
+
+  return to_json_string({
+    status = "mining_initiated",
+    entity_id = params.unit_number,
+    entity_name = target_entity.name
+  })
+end
 
 -- on_tick handler for movement
 local function handle_player_movement_on_tick()
@@ -311,7 +383,7 @@ local function handle_player_movement_on_tick()
       -- Move to next waypoint, update walking_state if necessary
       local next_waypoint = pmd.path[pmd.current_waypoint_index]
       if next_waypoint then
-         player.character.walking_state = {target = next_waypoint, arrive_distance = reach_threshold/2} -- Use target for smoother movement
+          player.character.walking_state = {target = next_waypoint, arrive_distance = reach_threshold/2} -- Use target for smoother movement
       else -- Should not happen if path is valid
         pmd.destination_reached = true; pmd.path = nil; player.character.walking_state = {walking=false}
       end
@@ -341,10 +413,11 @@ local function on_init_handler()
     start_pathfinding_to = function(params) return start_pathfinding_to_impl(params) end,
     get_movement_status = function() return get_movement_status_impl() end,
     scan_nearby_entities = function(params) return scan_nearby_entities_impl(params) end,
-    get_all_unlocked_recipes = function() return get_all_unlocked_recipes_impl() end
+    get_all_unlocked_recipes = function() return get_all_unlocked_recipes_impl() end,
+    mine_target_entity = function(params) return mine_target_entity_impl(params) end
   })
 
-  game.print("Factorio Autonomo-Bot Mod Initialized. Interface 'factorio_autonomo_bot' is ready with movement, scanning, and recipe lookup.")
+  game.print("Factorio Autonomo-Bot Mod Initialized. Interface 'factorio_autonomo_bot' is ready with movement, scanning, recipes, and mining.")
 end
 
 local function on_load_handler()
@@ -360,9 +433,10 @@ local function on_load_handler()
     start_pathfinding_to = function(params) return start_pathfinding_to_impl(params) end,
     get_movement_status = function() return get_movement_status_impl() end,
     scan_nearby_entities = function(params) return scan_nearby_entities_impl(params) end,
-    get_all_unlocked_recipes = function() return get_all_unlocked_recipes_impl() end
+    get_all_unlocked_recipes = function() return get_all_unlocked_recipes_impl() end,
+    mine_target_entity = function(params) return mine_target_entity_impl(params) end
   })
-  -- game.print("Factorio Autonomo-Bot Mod Loaded with save game. Movement, scanning, and recipes ready.")
+  -- game.print("Factorio Autonomo-Bot Mod Loaded with save game. Movement, scanning, recipes, and mining ready.")
 end
 
 script.on_init(on_init_handler)
@@ -371,15 +445,15 @@ script.on_event(defines.events.on_tick, handle_player_movement_on_tick)
 
 -- Python agent RCON commands:
 -- For get_player_info:
---   /sc game.print(remote.call("factorio_autonomo_bot", "get_player_info"))
+--  /sc game.print(remote.call("factorio_autonomo_bot", "get_player_info"))
 -- For start_pathfinding_to (example with x=10, y=20):
---   /sc game.print(remote.call("factorio_autonomo_bot", "start_pathfinding_to", {x=10, y=20}))
+--  /sc game.print(remote.call("factorio_autonomo_bot", "start_pathfinding_to", {x=10, y=20}))
 -- For get_movement_status:
---   /sc game.print(remote.call("factorio_autonomo_bot", "get_movement_status"))
+--  /sc game.print(remote.call("factorio_autonomo_bot", "get_movement_status"))
 -- For scan_nearby_entities (example with radius 32):
---   /sc game.print(remote.call("factorio_autonomo_bot", "scan_nearby_entities", {radius=32}))
+--  /sc game.print(remote.call("factorio_autonomo_bot", "scan_nearby_entities", {radius=32}))
 -- For get_all_unlocked_recipes:
---   /sc game.print(remote.call("factorio_autonomo_bot", "get_all_unlocked_recipes"))
+--  /sc game.print(remote.call("factorio_autonomo_bot", "get_all_unlocked_recipes"))
 
 -- Testing in Factorio console:
 -- /c global.player_movement_data = nil; initialize_global_data() -- Reset state
