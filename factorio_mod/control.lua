@@ -206,14 +206,20 @@ local function scan_nearby_entities_impl(params)
 
     for _, entity in pairs(entities_found) do
       if entity.valid then -- Make sure entity still exists
+
+        -- Create a table for the entity's data
         local entity_data = {
-          name = entity.name,
-          position = {x = string.format("%.2f", entity.position.x), y = string.format("%.2f", entity.position.y)},
-          unit_number = entity.unit_number -- This is the unique ID
+            name = entity.name,
+            position = {x = string.format("%.2f", entity.position.x), y = string.format("%.2f", entity.position.y)},
+            unit_number = entity.unit_number -- This is the unique ID
         }
+
+        -- If the entity is a resource and has an amount, add it to the data
         if entity.type == "resource" and entity.amount then
-          entity_data.amount = entity.amount
+            entity_data.amount = entity.amount
         end
+
+        -- Add the entity's data to the list of found entities
         table.insert(found_entities_data, entity_data)
       end
     end
@@ -310,14 +316,14 @@ local function mine_target_entity_impl(params)
 
   if not (target_entity.mineable and target_entity.type == "resource") then
     -- Could also check player.character.can_mine(target_entity) which is more comprehensive
-     if not player.character.can_mine(target_entity) then
+      if not player.character.can_mine(target_entity) then
         return to_json_string({status = "error", message = "Target entity is not mineable by player character: " .. target_entity.name, entity_id = params.unit_number, entity_name = target_entity.name})
-     end
-     -- If can_mine is true, but it's not a resource (e.g. a rock), proceed.
-     -- For now, let's restrict to type "resource" or "tree" for simplicity, as Gemini will be told to mine these.
-     if not (target_entity.type == "resource" or target_entity.type == "tree") then
+      end
+      -- If can_mine is true, but it's not a resource (e.g. a rock), proceed.
+      -- For now, let's restrict to type "resource" or "tree" for simplicity, as Gemini will be told to mine these.
+      if not (target_entity.type == "resource" or target_entity.type == "tree") then
         return to_json_string({status = "error", message = "Target entity is not a resource or tree: " .. target_entity.name .. " (type: " .. target_entity.type .. ")", entity_id = params.unit_number, entity_name = target_entity.name})
-     end
+      end
   end
 
   -- Check if character has a suitable mining tool (e.g. pickaxe)
@@ -335,7 +341,6 @@ local function mine_target_entity_impl(params)
     entity_name = target_entity.name
   })
 end
-
 
 -- on_tick handler for movement
 local function handle_player_movement_on_tick()
@@ -378,7 +383,7 @@ local function handle_player_movement_on_tick()
       -- Move to next waypoint, update walking_state if necessary
       local next_waypoint = pmd.path[pmd.current_waypoint_index]
       if next_waypoint then
-         player.character.walking_state = {target = next_waypoint, arrive_distance = reach_threshold/2} -- Use target for smoother movement
+          player.character.walking_state = {target = next_waypoint, arrive_distance = reach_threshold/2} -- Use target for smoother movement
       else -- Should not happen if path is valid
         pmd.destination_reached = true; pmd.path = nil; player.character.walking_state = {walking=false}
       end
@@ -440,15 +445,15 @@ script.on_event(defines.events.on_tick, handle_player_movement_on_tick)
 
 -- Python agent RCON commands:
 -- For get_player_info:
---   /sc game.print(remote.call("factorio_autonomo_bot", "get_player_info"))
+--  /sc game.print(remote.call("factorio_autonomo_bot", "get_player_info"))
 -- For start_pathfinding_to (example with x=10, y=20):
---   /sc game.print(remote.call("factorio_autonomo_bot", "start_pathfinding_to", {x=10, y=20}))
+--  /sc game.print(remote.call("factorio_autonomo_bot", "start_pathfinding_to", {x=10, y=20}))
 -- For get_movement_status:
---   /sc game.print(remote.call("factorio_autonomo_bot", "get_movement_status"))
+--  /sc game.print(remote.call("factorio_autonomo_bot", "get_movement_status"))
 -- For scan_nearby_entities (example with radius 32):
---   /sc game.print(remote.call("factorio_autonomo_bot", "scan_nearby_entities", {radius=32}))
+--  /sc game.print(remote.call("factorio_autonomo_bot", "scan_nearby_entities", {radius=32}))
 -- For get_all_unlocked_recipes:
---   /sc game.print(remote.call("factorio_autonomo_bot", "get_all_unlocked_recipes"))
+--  /sc game.print(remote.call("factorio_autonomo_bot", "get_all_unlocked_recipes"))
 
 -- Testing in Factorio console:
 -- /c global.player_movement_data = nil; initialize_global_data() -- Reset state

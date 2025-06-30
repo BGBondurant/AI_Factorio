@@ -58,7 +58,7 @@ class FactorioRCONClient:
             try:
                 self.connect()
             except Exception as e:
-                 raise ConnectionError(f"RCON reconnection failed: {e}")
+                    raise ConnectionError(f"RCON reconnection failed: {e}")
 
         try:
             # print(f"Sending RCON command: {command}") # Verbose
@@ -137,6 +137,7 @@ class FactorioRCONClient:
         """
         return self._execute_lua_call("get_all_unlocked_recipes")
 
+
     def mine_target_entity(self, entity_id):
         """
         Commands the player to mine the entity with the given unit_number.
@@ -145,7 +146,6 @@ class FactorioRCONClient:
             print("RCONClient Error: entity_id cannot be None for mine_target_entity.")
             return {"status": "error", "message": "entity_id was None"}
         return self._execute_lua_call("mine_target_entity", {"unit_number": entity_id})
-
 
 class GeminiAgent:
     def __init__(self, api_key):
@@ -168,12 +168,6 @@ class GeminiAgent:
         inventory_summary = game_state_dict.get('inventory', {})
         position_summary = game_state_dict.get('position', {})
 
-        entities_prompt_list = []
-        if nearby_entities_list and 'entities' in nearby_entities_list:
-            for entity in nearby_entities_list['entities'][:15]: # Limit to avoid excessive prompt length
-                entities_prompt_list.append(f"- {entity['name']} at ({entity['position']['x']}, {entity['position']['y']}) id:{entity.get('unit_number', 'N/A')}")
-        entities_summary = "\n".join(entities_prompt_list) if entities_prompt_list else "None visible"
-
         # For recipes, sending all might be too much. For now, let's send a count.
         # A better approach might be to let Gemini ask for specific recipe details if needed,
         # or provide a way to query recipes based on item names.
@@ -183,7 +177,7 @@ class GeminiAgent:
             recipes_summary_list.append(f"Total recipes known: {len(known_recipes_dict['recipes'])}.")
             # Example: Find a few key recipes to include
             for recipe in known_recipes_dict['recipes'][:5]: # Show first 5 for brevity
-                 recipes_summary_list.append(f"  - {recipe['name']}: Produces {[(p['name'], p['amount']) for p in recipe['products']]}")
+                    recipes_summary_list.append(f"  - {recipe['name']}: Produces {[(p['name'], p['amount']) for p in recipe['products']]}")
 
         recipes_summary = "\n".join(recipes_summary_list) if recipes_summary_list else "No recipes loaded."
 
@@ -337,8 +331,7 @@ def main():
 
 
         loop_count = 0
-        # max_loops = 10 # Limit loops for testing - Keep this for longer runs if desired
-        max_loops = 5 # Set to a smaller number for focused initial MINE tests
+        max_loops = 10 # Limit loops for testing
         print(f"*** Running for a maximum of {max_loops} loops for this test run. ***")
 
         while loop_count < max_loops :
@@ -366,8 +359,7 @@ def main():
             print(f"  Nearby Entities Scanned: {len(nearby_entities.get('entities', []))} found within radius {scan_radius}.")
             # Optional: Log a few scanned entities for quick check
             # for i, entity in enumerate(nearby_entities.get('entities', [])[:3]):
-            #     print(f"    Entity {i+1}: {entity.get('name')} at {entity.get('position')} ID: {entity.get('unit_number')} Amt: {entity.get('amount')}")
-
+            #     print(f"     Entity {i+1}: {entity.get('name')} at {entity.get('position')} ID: {entity.get('unit_number')} Amt: {entity.get('amount')}")
 
             if not ai_agent:
                 print("THINK: Skipping AI decision (GeminiAgent not initialized).")
@@ -549,16 +541,6 @@ def main():
                 else:
                     # This case should be caught by earlier checks for target_id and target_name
                     print(f"  Error: Could not determine a specific entity to mine based on parameters: {action_params}")
-
-            elif action_type == "CRAFT":
-                recipe_name = action_params.get("recipe_name")
-                        print("  (Simulating mining duration of 3 seconds...)")
-                        time.sleep(3)
-                    else:
-                        print("    Failed to reach mining position or timeout.")
-                else:
-                    # This case should be caught earlier if target_id and target_name were both initially null
-                    print(f"  Could not determine a specific entity to mine based on parameters: {action_params}")
 
             elif action_type == "CRAFT":
                 recipe_name = action_params.get("recipe_name")
