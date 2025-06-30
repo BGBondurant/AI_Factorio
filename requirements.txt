@@ -1,0 +1,3 @@
+mcrcon>=0.7.0 # For RCON communication
+google-generativeai>=0.3.0 # For Gemini API interaction
+# Add other libraries as needed
