@@ -36,7 +36,7 @@ This setup allows the Factorio Autonomo-Bot mod to run in your game, providing a
 3.  **Install the Mod**:
     *   Navigate to the `Factorio_Autonomo-Bot_Mod/` folder from the downloaded package.
     *   Inside, you'll find a folder named `factorio_autonomo_bot_v0.3.0` (or the version you downloaded). This is the actual mod folder.
-    *   **Copy** this `factorio_autonomo_bot_vX.X.X` folder (e.g., `factorio_autonomo_bot_v0.3.0`) into your Factorio `mods` directory.
+    *   **Copy** this `factorio_autonomo_bot_v0.3.0` folder into your Factorio `mods` directory.
 
 4.  **Enable the Mod in Factorio**:
     *   Launch Factorio 2.0 (with the Space Age expansion).
