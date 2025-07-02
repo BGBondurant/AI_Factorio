@@ -2,7 +2,7 @@
 
 This package contains the Factorio Autonomo-Bot, a mod designed for **Factorio 2.0 and the Space Age expansion**. It allows an AI agent to control a player in Factorio, and includes the Python-based AI agent itself.
 
-**Mod Version**: 0.3.0 (or newer compatible versions)
+**Mod Version**: 0.3.0 (as specified in `Mod/info.json`)
 **Factorio Version**: 2.0+
 **Required Dependencies**: Base Game (2.0+), Space Age Expansion
 
@@ -23,8 +23,8 @@ This setup allows the Factorio Autonomo-Bot mod to run in your game, providing a
 
 1.  **Download the Mod Package**:
     *   You should have a `.zip` file or a folder containing this `README.md` and two sub-folders:
-        *   `Factorio_Autonomo-Bot_Mod/`
-        *   `Python_Agent/`
+        *   `Mod/`
+        *   `Agent/`
 
 2.  **Locate Your Factorio Mods Directory**:
     *   The location depends on your operating system:
@@ -34,9 +34,9 @@ This setup allows the Factorio Autonomo-Bot mod to run in your game, providing a
     *   If the `mods` directory doesn't exist, run Factorio once to create it.
 
 3.  **Install the Mod**:
-    *   Navigate to the `Factorio_Autonomo-Bot_Mod/` folder from the downloaded package.
-    *   Inside, you'll find a folder named `factorio_autonomo_bot_v0.3.0` (or the version you downloaded). This is the actual mod folder.
-    *   **Copy** this `factorio_autonomo_bot_vX.X.X` folder (e.g., `factorio_autonomo_bot_v0.3.0`) into your Factorio `mods` directory.
+    *   The `Mod/` folder in this package is the actual mod.
+    *   **Copy** the entire `Mod/` folder into your Factorio `mods` directory.
+    *   **Rename** the copied folder to `factorio_autonomo_bot_0.3.0` (or `MOD-NAME_MOD-VERSION` based on the `name` and `version` fields in `Mod/info.json`). The name in `info.json` is "factorio_autonomo_bot" and version is "0.3.0".
 
 4.  **Enable the Mod in Factorio**:
     *   Launch Factorio 2.0 (with the Space Age expansion).
@@ -73,10 +73,10 @@ This setup enables the Python-based AI agent to connect to the Factorio mod (run
 **Steps:**
 
 1.  **Navigate to the Python Agent Directory**:
-    *   In the downloaded package, find the `Python_Agent/` folder. This is where you'll work for the agent setup.
+    *   In the downloaded package, find the `Agent/` folder. This is where you'll work for the agent setup.
 
 2.  **Create a Virtual Environment (Recommended)**:
-    *   Open a terminal or command prompt in the `Python_Agent/` directory.
+    *   Open a terminal or command prompt in the `Agent/` directory.
     *   Run:
         ```bash
         python -m venv venv
@@ -118,7 +118,7 @@ This setup enables the Python-based AI agent to connect to the Factorio mod (run
 
 5.  **Run the Python Agent**:
     *   Ensure your Factorio game/server is running with the mod enabled.
-    *   In your terminal (still in the `Python_Agent/` directory with the virtual environment active), run the main script:
+    *   In your terminal (still in the `Agent/` directory with the virtual environment active), run the main script:
         ```bash
         python main.py
         ```
