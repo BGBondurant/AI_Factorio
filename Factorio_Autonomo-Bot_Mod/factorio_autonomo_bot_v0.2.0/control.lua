@@ -1,5 +1,6 @@
 -- Factorio Autonomo-Bot Mod
 -- control.lua
+-- Updated for Factorio 2.0 / Space Age (Simulated Migration)
 
 -- Utility function for simple JSON construction (manual)
 local function to_json_string(data_table)
@@ -114,12 +115,13 @@ local function start_pathfinding_to_impl(params)
     force = player.force, -- Or game.forces.player for default
     bounding_box = player.character.bounding_box,
     collidable = true, -- Default
-    path_resolution_modifier = 0, -- Default for character, higher for vehicles
-    -- algorithm = "a*", -- default is A*
+    path_resolution_modifier = 0, -- Default for character, higher for vehicles. Factorio 2.0: Verify if new options or defaults are recommended.
+    -- algorithm = "a*", -- default is A*. Factorio 2.0: Check for new algorithms or options.
     -- collateral_damage_cost = 1000, -- example
     can_open_gates = true
   }
 
+  -- Factorio 2.0: player.surface.find_path assumed to be stable. Verify parameters and return value.
   local path = player.surface.find_path(path_params)
 
   if path and #path > 0 then
@@ -184,12 +186,14 @@ local function scan_nearby_entities_impl(params)
   -- Define the resource types we are interested in.
   -- Note: "tree" is a common name, but Factorio uses specific names like "tree-01", "tree-02", etc.
   -- or generally entities with type "tree". We'll filter by prototype names first.
-  -- For Factorio 2.0, "simple-entity" with a resource category might be more general for some resources.
-  -- Let's list common resource entity names.
+  -- Factorio 2.0 / Space Age: This list might need to be expanded for new resources on different planets/surfaces
+  -- or if the AI's objectives change to include Space Age materials.
+  -- The function surface.find_entities_filtered is assumed to be stable, but new filter options might be available.
   local resource_entity_names = {
     "iron-ore", "copper-ore", "stone", "coal",
     "tree" -- This will act as a general category for trees, find_entities_filtered can take type="tree"
     -- Crude oil needs "crude-oil" (which is a resource entity)
+    -- TODO Factorio 2.0: Add new relevant resource names if needed for Space Age.
   }
 
   local found_entities_data = {}
@@ -198,6 +202,7 @@ local function scan_nearby_entities_impl(params)
   -- Scan for specific resource names
   for _, name_filter in ipairs(resource_entity_names) do
     local entities_found
+    -- Factorio 2.0: surface.find_entities_filtered assumed stable. Verify parameters, filter options, and return value.
     if name_filter == "tree" then
       entities_found = surface.find_entities_filtered{area=area_to_scan, type="tree"}
     else
@@ -242,7 +247,8 @@ local function get_all_unlocked_recipes_impl()
   end
 
   local unlocked_recipes_data = {}
-
+  -- Factorio 2.0: Access to force.recipes and structure of LuaRecipePrototype (name, enabled, ingredients, products)
+  -- is assumed to be stable. Verify if new fields or ingredient/product types are relevant for Space Age.
   for recipe_name, recipe_prototype in pairs(force.recipes) do
     if recipe_prototype.enabled then -- 'enabled' is the correct field for unlocked/available recipes
       local recipe_data = {
@@ -256,6 +262,7 @@ local function get_all_unlocked_recipes_impl()
       -- 1. {type="item", name="iron-plate", amount=2}
       -- 2. {{"iron-plate", 2}, {"copper-plate", 1}} (older style, or for fluid ingredients sometimes)
       -- Factorio 2.0 typically uses the table-per-ingredient format.
+      -- Assumed stable, but new types or properties for ingredients might exist in Space Age.
       for _, ingredient in ipairs(recipe_prototype.ingredients) do
         table.insert(recipe_data.ingredients, {
           name = ingredient.name,
@@ -265,6 +272,7 @@ local function get_all_unlocked_recipes_impl()
       end
 
       -- Process products
+      -- Assumed stable, but new types or properties for products might exist in Space Age.
       for _, product in ipairs(recipe_prototype.products) do
         table.insert(recipe_data.products, {
           name = product.name,
@@ -280,6 +288,8 @@ local function get_all_unlocked_recipes_impl()
 end
 
 -- RCON function to command the player to mine a target entity
+-- Factorio 2.0: Review player.character.can_mine(target) and player.character.mine(target) for any API changes.
+-- The method of finding entity by unit_number via find_entities_filtered is assumed to remain a valid approach.
 local function mine_target_entity_impl(params)
   local player = game.players[1]
   if not player then
@@ -343,6 +353,12 @@ local function mine_target_entity_impl(params)
 end
 
 -- on_tick handler for movement
+-- Factorio 2.0 / Space Age QoL Considerations:
+-- This function manually handles path following on a tick-by-tick basis.
+-- If Factorio 2.0 introduces more advanced built-in movement commands for characters
+-- (e.g., a command to "move to position X,Y and handle pathfinding/following automatically"),
+-- then this function could potentially be simplified or parts of it made redundant.
+-- For now, assuming current detailed control is still necessary.
 local function handle_player_movement_on_tick()
   local player = game.players[1]
   local pmd = global.player_movement_data
@@ -417,7 +433,7 @@ local function on_init_handler()
     mine_target_entity = function(params) return mine_target_entity_impl(params) end
   })
 
-  game.print("Factorio Autonomo-Bot Mod Initialized. Interface 'factorio_autonomo_bot' is ready with movement, scanning, recipes, and mining.")
+  game.print("Factorio Autonomo-Bot Mod Initialized (Factorio 2.0 Compatible). Interface 'factorio_autonomo_bot' is ready.")
 end
 
 local function on_load_handler()
