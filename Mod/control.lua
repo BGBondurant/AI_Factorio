@@ -1,51 +1,35 @@
 -- Factorio Autonomo-Bot Mod
 -- control.lua
--- Updated for Factorio 2.0 / Space Age (Simulated Migration)
+-- Final version using a basic "dumb walk" for movement, a pattern validated by other AI mods.
 
--- Utility function for simple JSON construction (manual)
+local actions = {}
+
+-- Utility function for simple JSON construction
 local function to_json_string(data_table)
     if type(data_table) ~= "table" then
-        if type(data_table) == "string" then
-            return "\"" .. string.gsub(data_table, "\"", "\\\"") .. "\""
-        elseif type(data_table) == "boolean" then
-            return tostring(data_table)
-        else -- numbers, nil
-            return tostring(data_table)
-        end
+        if type(data_table) == "string" then return "\"" .. string.gsub(data_table, "\"", "\\\"") .. "\""
+        elseif type(data_table) == "boolean" then return tostring(data_table)
+        else return tostring(data_table) end
     end
-
     local parts = {}
-    local is_array = true
-    local max_idx = 0
+    local is_array = true; local max_idx = 0
     for k, _ in pairs(data_table) do
-        if type(k) ~= "number" or k < 1 or k > #data_table + 1000 then -- Heuristic for array detection
-            is_array = false
-        end
-        if type(k) == "number" and k > max_idx then
-            max_idx = k
-        end
+        if type(k) ~= "number" or k < 1 or k > #data_table + 1000 then is_array = false end
+        if type(k) == "number" and k > max_idx then max_idx = k end
     end
-    if max_idx > 0 and #data_table ~= max_idx then -- sparse array is not a JSON array
-        is_array = false
-    end
-
-
+    if max_idx > 0 and #data_table ~= max_idx then is_array = false end
     if is_array then
         table.insert(parts, "[")
         for i = 1, #data_table do
             table.insert(parts, to_json_string(data_table[i]))
-            if i < #data_table then
-                table.insert(parts, ",")
-            end
+            if i < #data_table then table.insert(parts, ",") end
         end
         table.insert(parts, "]")
-    else -- object
+    else
         table.insert(parts, "{")
         local first = true
         for k, v in pairs(data_table) do
-            if not first then
-                table.insert(parts, ",")
-            end
+            if not first then table.insert(parts, ",") end
             table.insert(parts, "\"" .. tostring(k) .. "\":" .. to_json_string(v))
             first = false
         end
@@ -54,427 +38,119 @@ local function to_json_string(data_table)
     return table.concat(parts, "")
 end
 
-
--- Initialize global data structures
-local function initialize_global_data()
-  if global.player_movement_data == nil then
-    global.player_movement_data = {
-      path = nil,
-      current_waypoint_index = 0,
-      destination_reached = true, -- Initially not moving
-      target_x = 0,
-      target_y = 0
-    }
-  end
-end
-
--- Core implementation for getting player info
-local function get_player_info_impl()
+-- RCON function implementations
+function actions.get_player_info()
   local player = game.players[1]
-  if not player then
-    return to_json_string({error = "Player not found"})
-  end
-
-  local position = player.position
-  local inventory = player.get_main_inventory()
-  local inventory_contents = {}
-
-  if inventory then
-    for i = 1, #inventory do
-      local item_stack = inventory[i]
-      if item_stack and item_stack.valid and item_stack.count > 0 then
-        inventory_contents[item_stack.name] = (inventory_contents[item_stack.name] or 0) + item_stack.count
-      end
-    end
-  end
-
+  if not player then return to_json_string({error = "Player not found"}) end
   return to_json_string({
-    position = {x = string.format("%.2f", position.x), y = string.format("%.2f", position.y)},
-    inventory = inventory_contents,
+    position = {x = string.format("%.2f", player.position.x), y = string.format("%.2f", player.position.y)},
+    inventory = (function()
+        local c = {}
+        if player.get_main_inventory() then
+            for i=1, #player.get_main_inventory() do
+                local stack = player.get_main_inventory()[i]
+                if stack.valid and stack.count > 0 then c[stack.name] = (c[stack.name] or 0) + stack.count end
+            end
+        end
+        return c
+    end)(),
     health = player.character and string.format("%.1f", player.character.health) or nil,
     tick = game.tick
   })
 end
 
--- RCON function to start pathfinding
--- Expects params from remote.call to be a table: {x = target_x, y = target_y}
-local function start_pathfinding_to_impl(params)
+-- This uses the basic "dumb walk" by directly setting the character's walking target.
+-- It has NO obstacle avoidance.
+-- DOES NOT WORK AS OF NOW
+-- TODO: FIX PATHFINDING
+function actions.move_to_position(params)
   local player = game.players[1]
-  if not (player and player.character) then
-    return to_json_string({status = "Pathfinding failed", path_found = false, error = "Player or character not found"})
-  end
-  if not (params and params.x and params.y) then
-    return to_json_string({status = "Pathfinding failed", path_found = false, error = "Target coordinates (x, y) not provided"})
-  end
+  if not (player and player.character) then return to_json_string({status = "error", message = "Player or character not found"}) end
+  if not (params and params.x and params.y) then return to_json_string({status = "error", message = "Target coordinates not provided"}) end
 
   local target_pos = {x = tonumber(params.x), y = tonumber(params.y)}
-  local path_params = {
-    surface = player.surface,
-    start = player.position,
-    goal = target_pos,
-    force = player.force, -- Or game.forces.player for default
-    bounding_box = player.character.bounding_box,
-    collidable = true, -- Default
-    path_resolution_modifier = 0, -- Default for character, higher for vehicles. Factorio 2.0: Verify if new options or defaults are recommended.
-    -- algorithm = "a*", -- default is A*. Factorio 2.0: Check for new algorithms or options.
-    -- collateral_damage_cost = 1000, -- example
-    can_open_gates = true
-  }
+  
+  -- DEBUG 1: Print the walking_state BEFORE we touch it.
+  game.print("--- BEFORE ---")
+  game.print("walking_state: " .. to_json_string(player.character.walking_state))
 
-  -- Factorio 2.0: player.surface.find_path assumed to be stable. Verify parameters and return value.
-  local path = player.surface.find_path(path_params)
+  -- Attempt to modify the properties
+  player.character.walking_state.target = target_pos
+  player.character.walking_state.walking = true
 
-  if path and #path > 0 then
-    global.player_movement_data = {
-      path = path,
-      current_waypoint_index = 1,
-      destination_reached = false,
-      target_x = target_pos.x,
-      target_y = target_pos.y
-    }
-    -- game.print("Path found. Waypoints: " .. #path) -- For debugging
-    return to_json_string({status = "Pathfinding initiated", path_found = true, waypoints = #path, target = target_pos})
-  else
-    global.player_movement_data.destination_reached = true -- Ensure not stuck in moving state
-    global.player_movement_data.path = nil
-    -- game.print("Path not found to X:" .. target_pos.x .. " Y:" .. target_pos.y) -- For debugging
-    return to_json_string({status = "Pathfinding failed", path_found = false, target = target_pos, error = "No path found"})
-  end
+  -- DEBUG 2: Print the walking_state AFTER we touch it.
+  game.print("--- AFTER ---")
+  game.print("walking_state: " .. to_json_string(player.character.walking_state))
+
+  return to_json_string({status = "movement_initiated"})
 end
 
--- RCON function to get movement status
-local function get_movement_status_impl()
+-- This is simplified to just check the character's walking state.
+function actions.get_movement_status()
   local player = game.players[1]
-  local current_pos_str = {}
-  if player and player.character then
-    current_pos_str = {x = string.format("%.2f", player.position.x), y = string.format("%.2f", player.position.y)}
-  else
-    current_pos_str = {x = "N/A", y = "N/A"}
-  end
+  if not (player and player.character) then return to_json_string({is_moving = false}) end
 
-  local pmd = global.player_movement_data
-  return to_json_string({
-    is_moving = (pmd.path ~= nil and not pmd.destination_reached),
-    destination_reached = pmd.destination_reached,
-    target_position = (pmd.path and {x = pmd.target_x, y = pmd.target_y}) or nil,
-    current_waypoint = (pmd.path and pmd.current_waypoint_index) or 0,
-    total_waypoints = (pmd.path and #pmd.path) or 0,
-    current_position = current_pos_str
-  })
+  local is_moving = player.character.walking_state.walking
+  return to_json_string({is_moving = is_moving})
 end
 
--- RCON function to scan nearby entities
-local function scan_nearby_entities_impl(params)
+function actions.scan_nearby_entities(params)
   local player = game.players[1]
-  if not (player and player.character) then
-    return to_json_string({error = "Player or character not found for scanning."})
-  end
-  if not (params and params.radius) then
-    return to_json_string({error = "Radius not provided for scanning."})
-  end
-
+  if not (player and player.character) then return to_json_string({error = "Player not found"}) end
+  if not (params and params.radius) then return to_json_string({error = "Radius not provided"}) end
   local radius = tonumber(params.radius)
-  if not (radius and radius > 0) then
-    return to_json_string({error = "Invalid radius provided: " .. tostring(params.radius)})
-  end
-
-  local area_to_scan = {
-    {player.position.x - radius, player.position.y - radius},
-    {player.position.x + radius, player.position.y + radius}
-  }
-
-  -- Define the resource types we are interested in.
-  -- Note: "tree" is a common name, but Factorio uses specific names like "tree-01", "tree-02", etc.
-  -- or generally entities with type "tree". We'll filter by prototype names first.
-  -- Factorio 2.0 / Space Age: This list might need to be expanded for new resources on different planets/surfaces
-  -- or if the AI's objectives change to include Space Age materials.
-  -- The function surface.find_entities_filtered is assumed to be stable, but new filter options might be available.
-  local resource_entity_names = {
-    "iron-ore", "copper-ore", "stone", "coal",
-    "tree" -- This will act as a general category for trees, find_entities_filtered can take type="tree"
-    -- Crude oil needs "crude-oil" (which is a resource entity)
-    -- TODO Factorio 2.0: Add new relevant resource names if needed for Space Age.
-  }
-
-  local found_entities_data = {}
-  local surface = player.surface
-
-  -- Scan for specific resource names
-  for _, name_filter in ipairs(resource_entity_names) do
+  if not (radius and radius > 0) then return to_json_string({error = "Invalid radius"}) end
+  local area = {{player.position.x - radius, player.position.y - radius}, {player.position.x + radius, player.position.y + radius}}
+  local resource_names = { "iron-ore", "copper-ore", "stone", "coal", "tree" }
+  local found_entities = {}
+  for _, name in ipairs(resource_names) do
     local entities_found
-    -- Factorio 2.0: surface.find_entities_filtered assumed stable. Verify parameters, filter options, and return value.
-    if name_filter == "tree" then
-      entities_found = surface.find_entities_filtered{area=area_to_scan, type="tree"}
-    else
-      entities_found = surface.find_entities_filtered{area=area_to_scan, name=name_filter, type="resource"}
-    end
-
+    if name == "tree" then entities_found = player.surface.find_entities_filtered{area=area, type="tree"} else entities_found = player.surface.find_entities_filtered{area=area, name=name, type="resource"} end
     for _, entity in pairs(entities_found) do
-      if entity.valid then -- Make sure entity still exists
-
-        -- Create a table for the entity's data
-        local entity_data = {
-            name = entity.name,
-            position = {x = string.format("%.2f", entity.position.x), y = string.format("%.2f", entity.position.y)},
-            unit_number = entity.unit_number -- This is the unique ID
-        }
-
-        -- If the entity is a resource and has an amount, add it to the data
-        if entity.type == "resource" and entity.amount then
-            entity_data.amount = entity.amount
-        end
-
-        -- Add the entity's data to the list of found entities
-        table.insert(found_entities_data, entity_data)
+      if entity.valid then
+        local data = { name = entity.name, position = {x = string.format("%.2f", entity.position.x), y = string.format("%.2f", entity.position.y)}, unit_number = entity.unit_number }
+        if entity.type == "resource" and entity.amount then data.amount = entity.amount end
+        table.insert(found_entities, data)
       end
     end
   end
-
-  return to_json_string({entities = found_entities_data})
+  return to_json_string({entities = found_entities})
 end
 
-
--- RCON function to get all unlocked recipes for the player's force
-local function get_all_unlocked_recipes_impl()
+function actions.get_all_unlocked_recipes()
   local player = game.players[1]
-  if not player then
-    return to_json_string({error = "Player not found for recipe lookup."})
-  end
-
+  if not player then return to_json_string({error = "Player not found"}) end
   local force = player.force
-  if not (force and force.recipes) then
-    return to_json_string({error = "Player force or recipes not available."})
-  end
-
-  local unlocked_recipes_data = {}
-  -- Factorio 2.0: Access to force.recipes and structure of LuaRecipePrototype (name, enabled, ingredients, products)
-  -- is assumed to be stable. Verify if new fields or ingredient/product types are relevant for Space Age.
-  for recipe_name, recipe_prototype in pairs(force.recipes) do
-    if recipe_prototype.enabled then -- 'enabled' is the correct field for unlocked/available recipes
-      local recipe_data = {
-        name = recipe_prototype.name,
-        ingredients = {},
-        products = {}
-      }
-
-      -- Process ingredients
-      -- recipe.ingredients can be in two formats:
-      -- 1. {type="item", name="iron-plate", amount=2}
-      -- 2. {{"iron-plate", 2}, {"copper-plate", 1}} (older style, or for fluid ingredients sometimes)
-      -- Factorio 2.0 typically uses the table-per-ingredient format.
-      -- Assumed stable, but new types or properties for ingredients might exist in Space Age.
-      for _, ingredient in ipairs(recipe_prototype.ingredients) do
-        table.insert(recipe_data.ingredients, {
-          name = ingredient.name,
-          amount = ingredient.amount,
-          type = ingredient.type or "item" -- Default to item if not specified
-        })
-      end
-
-      -- Process products
-      -- Assumed stable, but new types or properties for products might exist in Space Age.
-      for _, product in ipairs(recipe_prototype.products) do
-        table.insert(recipe_data.products, {
-          name = product.name,
-          amount = product.amount,
-          type = product.type or "item" -- Default to item if not specified
-        })
-      end
-      table.insert(unlocked_recipes_data, recipe_data)
+  if not (force and force.recipes) then return to_json_string({error = "Player force or recipes not available."}) end
+  local recipes = {}
+  for _, recipe in pairs(force.recipes) do
+    if recipe.enabled then
+      local data = { name = recipe.name, ingredients = {}, products = {} }
+      for _, ingredient in ipairs(recipe.ingredients) do table.insert(data.ingredients, { name = ingredient.name, amount = ingredient.amount, type = ingredient.type or "item" }) end
+      for _, product in ipairs(recipe.products) do table.insert(data.products, { name = product.name, amount = product.amount, type = product.type or "item" }) end
+      table.insert(recipes, data)
     end
   end
-
-  return to_json_string({recipes = unlocked_recipes_data})
+  return to_json_string({recipes = recipes})
 end
 
--- RCON function to command the player to mine a target entity
--- Factorio 2.0: Review player.character.can_mine(target) and player.character.mine(target) for any API changes.
--- The method of finding entity by unit_number via find_entities_filtered is assumed to remain a valid approach.
-local function mine_target_entity_impl(params)
+function actions.mine_target_entity(params)
   local player = game.players[1]
-  if not player then
-    return to_json_string({status = "error", message = "Player not found", entity_id = params and params.unit_number})
-  end
-  if not player.character then
-    return to_json_string({status = "error", message = "Player character not found", entity_id = params and params.unit_number})
-  end
-  if not (params and params.unit_number) then
-    return to_json_string({status = "error", message = "unit_number not provided for mining target"})
-  end
-
-  local target_entity = nil
-  -- Attempt to find entity by ID. player.surface.find_entity_by_id doesn't exist directly.
-  -- We iterate through entities in a small box around player, or rely on player.selected if AI can select.
-  -- For now, let's assume the AI will move close enough that find_entities_filtered on a small area is okay,
-  -- or that the entity ID is from a recent scan.
-  -- A more robust way is to use game.get_entity_by_id(unit_number) if available or surface.get_entity_by_id()
-  -- As of Factorio 1.1+, game.get_entity_by_id() is not directly available in the mod script global scope.
-  -- We must use surface.find_entities_filtered with the unit_number.
-
-  local entities_in_small_area = player.surface.find_entities_filtered{
-    position = player.position,
-    radius = 5, -- Small radius, assuming player is close to the target
-    unit_number = params.unit_number
-  }
-  if #entities_in_small_area > 0 then
-    target_entity = entities_in_small_area[1]
-  end
-
-  if not (target_entity and target_entity.valid) then
-    return to_json_string({status = "error", message = "Target entity not found or invalid", entity_id = params.unit_number})
-  end
-
-  if not (target_entity.mineable and target_entity.type == "resource") then
-    -- Could also check player.character.can_mine(target_entity) which is more comprehensive
-      if not player.character.can_mine(target_entity) then
-        return to_json_string({status = "error", message = "Target entity is not mineable by player character: " .. target_entity.name, entity_id = params.unit_number, entity_name = target_entity.name})
-      end
-      -- If can_mine is true, but it's not a resource (e.g. a rock), proceed.
-      -- For now, let's restrict to type "resource" or "tree" for simplicity, as Gemini will be told to mine these.
-      if not (target_entity.type == "resource" or target_entity.type == "tree") then
-        return to_json_string({status = "error", message = "Target entity is not a resource or tree: " .. target_entity.name .. " (type: " .. target_entity.type .. ")", entity_id = params.unit_number, entity_name = target_entity.name})
-      end
-  end
-
-  -- Check if character has a suitable mining tool (e.g. pickaxe)
-  -- This is implicitly handled by player.character.can_mine usually.
-  -- For simplicity, we assume the player has basic mining capability.
-
-  player.character.mine(target_entity)
-  -- Note: player.character.mine(target_entity, player.force) is not the correct signature.
-  -- It's just player.character.mine(target_entity).
-  -- The game handles mining progress internally. This command initiates/continues mining.
-
-  return to_json_string({
-    status = "mining_initiated",
-    entity_id = params.unit_number,
-    entity_name = target_entity.name
-  })
+  if not player or not player.character then return to_json_string({status = "error", message = "Player or character not found"}) end
+  if not (params and params.unit_number) then return to_json_string({status = "error", message = "unit_number not provided"}) end
+  local entities = player.surface.find_entities_filtered{position = player.position, radius = 10, unit_number = params.unit_number}
+  if #entities == 0 then return to_json_string({status = "error", message = "Target entity not found", entity_id = params.unit_number}) end
+  local target = entities[1]
+  if not player.character.can_mine(target) then return to_json_string({status = "error", message = "Target not mineable", entity_id = params.unit_number, entity_name = target.name}) end
+  player.character.mine(target)
+  return to_json_string({ status = "mining_initiated", entity_id = params.unit_number, entity_name = target.name })
 end
 
--- on_tick handler for movement
--- Factorio 2.0 / Space Age QoL Considerations:
--- This function manually handles path following on a tick-by-tick basis.
--- If Factorio 2.0 introduces more advanced built-in movement commands for characters
--- (e.g., a command to "move to position X,Y and handle pathfinding/following automatically"),
--- then this function could potentially be simplified or parts of it made redundant.
--- For now, assuming current detailed control is still necessary.
-local function handle_player_movement_on_tick()
-  local player = game.players[1]
-  local pmd = global.player_movement_data
-
-  if not (player and player.character and pmd and pmd.path and not pmd.destination_reached) then
-    if player and player.character and player.character.walking_state.walking and not (pmd and pmd.path and not pmd.destination_reached) then
-        -- If we are walking but shouldn't be (e.g. path cleared externally)
-        player.character.walking_state = {walking = false}
-    end
-    return
-  end
-
-  local current_waypoint = pmd.path[pmd.current_waypoint_index]
-  if not current_waypoint then
-    -- game.print("Movement: Invalid waypoint index " .. pmd.current_waypoint_index) -- Debug
-    pmd.destination_reached = true
-    pmd.path = nil
-    player.character.walking_state = {walking = false}
-    return
-  end
-
-  local dx = current_waypoint.x - player.position.x
-  local dy = current_waypoint.y - player.position.y
-  local distance_to_waypoint = math.sqrt(dx*dx + dy*dy)
-
-  -- Threshold for reaching a waypoint (e.g., 0.5 tiles)
-  -- Factorio path waypoints can be quite close.
-  local reach_threshold = 0.3
-
-  if distance_to_waypoint < reach_threshold then
-    pmd.current_waypoint_index = pmd.current_waypoint_index + 1
-    if pmd.current_waypoint_index > #pmd.path then
-      -- game.print("Movement: Destination reached at X:" .. string.format("%.2f", player.position.x) .. " Y:" .. string.format("%.2f", player.position.y)) -- Debug
-      pmd.destination_reached = true
-      pmd.path = nil
-      player.character.walking_state = {walking = false}
-    else
-      -- Move to next waypoint, update walking_state if necessary
-      local next_waypoint = pmd.path[pmd.current_waypoint_index]
-      if next_waypoint then
-          player.character.walking_state = {target = next_waypoint, arrive_distance = reach_threshold/2} -- Use target for smoother movement
-      else -- Should not happen if path is valid
-        pmd.destination_reached = true; pmd.path = nil; player.character.walking_state = {walking=false}
-      end
-    end
-  else
-    -- Continue moving towards the current waypoint
-    -- Ensure walking_state is set, find_path command might not persist it across ticks if interrupted
-    if not player.character.walking_state.walking or
-       (player.character.walking_state.target and
-        (player.character.walking_state.target.x ~= current_waypoint.x or player.character.walking_state.target.y ~= current_waypoint.y)) then
-        player.character.walking_state = {target = current_waypoint, arrive_distance = reach_threshold/2}
-    end
-  end
+-- Setup function
+local function setup_mod()
+  remote.add_interface("factorio_autonomo_bot", actions)
 end
 
-
--- Event registration
-local function on_init_handler()
-  initialize_global_data()
-
-  if not remote.interfaces["factorio_autonomo_bot"] then
-    remote.add_interface("factorio_autonomo_bot", {})
-  end
-
-  remote.add_interface("factorio_autonomo_bot", {
-    get_player_info = function() return get_player_info_impl() end,
-    start_pathfinding_to = function(params) return start_pathfinding_to_impl(params) end,
-    get_movement_status = function() return get_movement_status_impl() end,
-    scan_nearby_entities = function(params) return scan_nearby_entities_impl(params) end,
-    get_all_unlocked_recipes = function() return get_all_unlocked_recipes_impl() end,
-    mine_target_entity = function(params) return mine_target_entity_impl(params) end
-  })
-
-  game.print("Factorio Autonomo-Bot Mod Initialized (Factorio 2.0 Compatible). Interface 'factorio_autonomo_bot' is ready.")
-end
-
-local function on_load_handler()
-  initialize_global_data() -- Ensure data structure exists on load
-
-  if not remote.interfaces["factorio_autonomo_bot"] then
-    remote.add_interface("factorio_autonomo_bot", {})
-  end
-
-  -- Ensure all functions are registered on load as well
-  remote.add_interface("factorio_autonomo_bot", {
-    get_player_info = function() return get_player_info_impl() end,
-    start_pathfinding_to = function(params) return start_pathfinding_to_impl(params) end,
-    get_movement_status = function() return get_movement_status_impl() end,
-    scan_nearby_entities = function(params) return scan_nearby_entities_impl(params) end,
-    get_all_unlocked_recipes = function() return get_all_unlocked_recipes_impl() end,
-    mine_target_entity = function(params) return mine_target_entity_impl(params) end
-  })
-  -- game.print("Factorio Autonomo-Bot Mod Loaded with save game. Movement, scanning, recipes, and mining ready.")
-end
-
-script.on_init(on_init_handler)
-script.on_load(on_load_handler)
-script.on_event(defines.events.on_tick, handle_player_movement_on_tick)
-
--- Python agent RCON commands:
--- For get_player_info:
---  /sc game.print(remote.call("factorio_autonomo_bot", "get_player_info"))
--- For start_pathfinding_to (example with x=10, y=20):
---  /sc game.print(remote.call("factorio_autonomo_bot", "start_pathfinding_to", {x=10, y=20}))
--- For get_movement_status:
---  /sc game.print(remote.call("factorio_autonomo_bot", "get_movement_status"))
--- For scan_nearby_entities (example with radius 32):
---  /sc game.print(remote.call("factorio_autonomo_bot", "scan_nearby_entities", {radius=32}))
--- For get_all_unlocked_recipes:
---  /sc game.print(remote.call("factorio_autonomo_bot", "get_all_unlocked_recipes"))
-
--- Testing in Factorio console:
--- /c global.player_movement_data = nil; initialize_global_data() -- Reset state
--- /c game.print(remote.call("factorio_autonomo_bot", "start_pathfinding_to", {x = game.player.position.x + 10, y = game.player.position.y + 5}))
--- /c game.print(remote.call("factorio_autonomo_bot", "get_movement_status"))
--- /c game.print(remote.call("factorio_autonomo_bot", "scan_nearby_entities", {radius=16}))
--- /c game.print(remote.call("factorio_autonomo_bot", "get_all_unlocked_recipes"))
--- Observe player movement and status updates.
+-- Event Registrations
+script.on_init(setup_mod)
+script.on_load(setup_mod)
