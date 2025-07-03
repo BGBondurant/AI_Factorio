@@ -1,0 +1,2 @@
+-- data.lua
+-- Currently empty, placeholder for any future data-stage definitions.
